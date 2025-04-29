@@ -1,2 +1,1220 @@
-wait(0.2)
-print("hi")
+--[[
+		██    ██ ███████ ██████  ████████ ███████ ██   ██ 
+		██    ██ ██      ██   ██    ██    ██       ██ ██  
+		██    ██ █████   ██████     ██    █████     ███   
+		 ██  ██  ██      ██   ██    ██    ██       ██ ██  
+		  ████   ███████ ██   ██    ██    ███████ ██   ██ 
+                                                  
+            Vertex Self-Checkout Engine
+			Scripted by: lxcaslvx, Vertex Corp
+--]]
+
+-- //  VARIABLES  // 
+local GroupService = game:GetService("GroupService")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+local MASTER_MODULE = require(game.Workspace.vertex_toolbox_runner.MainModule)
+
+local TweenService = game:GetService("TweenService")
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+
+local LaneConfiguration = require(script.Parent.LaneConfiguration)
+local MasterConfiguration = require(script.Parent.Parent.Parent.Configuration.MasterConfiguration)
+
+local MainEvent = script.Parent.Event
+local Network = script.Parent.Parent.Parent.Configuration.Network
+local Screen = script.Parent.Screen.Screen
+local MainApp = Screen:WaitForChild("SCOTApp_R70s")
+local StoreMode = MainApp.StoreMode
+local Application = MainApp.Application
+local CheckoutStorage = nil
+script.Name = "VERTEX_Engine"
+
+script.Parent.Body.LaneNumber.SurfaceGui.TextLabel.Text = LaneConfiguration.LaneNumber
+if script.Parent:GetAttribute("Device") == 70 or 75 then
+	script.Parent.Name = "SCOAPP_R70_".. LaneConfiguration.LaneNumber
+	if not ReplicatedStorage:FindFirstChild("SCOAPP_R70_".. LaneConfiguration.LaneNumber) then
+		local StorageFolder = Instance.new("Folder", ReplicatedStorage)
+		StorageFolder.Name = "SCOAPP_R70_".. LaneConfiguration.LaneNumber
+	else
+		warn("VERTEX | Duplicate lane found" .. " SCOAPP_R70_".. LaneConfiguration.LaneNumber)
+	end
+	CheckoutStorage = ReplicatedStorage:WaitForChild("SCOAPP_R70_".. LaneConfiguration.LaneNumber)
+elseif script.Parent:GetAttribute("Device") == 90 then
+	script.Parent.Name = "SCOAPP_R90_".. LaneConfiguration.LaneNumber
+	if not ReplicatedStorage:FindFirstChild("SCOAPP_R90_".. LaneConfiguration.LaneNumber) then
+		local StorageFolder = Instance.new("Folder", ReplicatedStorage)
+		StorageFolder.Name = "SCOAPP_R90_".. LaneConfiguration.LaneNumber
+	end
+	CheckoutStorage = ReplicatedStorage:WaitForChild("SCOAPP_R90_".. LaneConfiguration.LaneNumber)
+end
+
+script.Parent.Screen.Screen.Touch.SoundId = "rbxassetid://126039917464257"
+DeviceVersion = "1.0.0"
+
+local HotkeyWeighItem = ""
+local ModeOfOperation = "Cash"
+local MachineStorage = {
+	Active = false,
+	Items = {},
+	PreviousIntervention = "",
+	ActiveStoreApplication = "",
+	ItemCount = 0,
+	CurrentPrice = 0,
+	ApprovalRequired = false,
+	AssistanceRequired = false,
+	AgeVerified = false,
+	InterventionActive = false,
+	OperationMode = "",
+	PayPressed = false,
+	StoreModeActive = false,
+	LaneClosureActive = false,
+	CashInserted = 0,
+	AssistanceMode = "Enabled",
+	ActiveAccount = {
+		ActiveID = 0,
+		CloseLane = false,
+		VoidTransaction = false,
+		SuspendTransaction = false,
+		PrintBarcode = false,
+		ModeOfOperation = false,
+		AssistantCall = false,
+	}, 
+	EnterPassword = false, 
+	EnterID = true, 
+}
+
+function ApplicationChange(name)
+	if MainApp.Application:FindFirstChild(name) then 
+		for i,v in pairs(MainApp.Application:GetChildren()) do
+			if v:IsA('Frame') and v.Name ~= "Footer" then
+				v.Visible = false
+			end
+		end 
+		MainApp.Application:FindFirstChild(name).Visible = true 
+		Network:Fire("AttendantStation",LaneConfiguration.LaneNumber,"Online",name,false,false)
+	end
+end
+
+function InterventionChange(name)
+	if MainApp.Application.Interventions:FindFirstChild(name) then 
+		for i,v in pairs(MainApp.Application.Interventions:GetChildren()) do
+			if v:IsA('Frame') and v.Name ~= "Footer" then
+				v.Visible = false
+			end
+		end
+		MainApp.Application.Interventions:FindFirstChild(name).Visible = true
+		MainApp.Application.Interventions.Visible = true
+		MachineStorage.InterventionActive = true
+	end
+end 
+
+function ChangeStatus(name)
+	if MainApp.Application.ScanScreen.BottomFrame.Status:FindFirstChild(name) then
+		for i,v in pairs(MainApp.Application.ScanScreen.BottomFrame.Status:GetChildren()) do
+			if v:IsA("UIGradient") then
+				v.Enabled = false
+			end
+		end
+		MainApp.Application.ScanScreen.BottomFrame.Status:FindFirstChild(name).Enabled = true
+	end
+end
+
+
+function ClearInterventions()
+	for i,v in pairs(MainApp.Application.Interventions:GetChildren()) do
+		if v:IsA("Frame") then
+			v.Visible = false
+		end
+	end
+	MainApp.Application.Interventions.Visible = false
+	MachineStorage.InterventionActive = false
+end
+
+function StoreApplicationChange(name)
+	for i,v in pairs(MainApp:GetChildren()) do
+		if v:IsA("Frame") then
+			v.Visible = false
+		end
+	end
+
+	for i,v in pairs(MainApp.StoreMode:GetChildren()) do
+		if v:IsA("Frame") then
+			v.Visible = false
+			MainApp.StoreMode:FindFirstChild(name).Visible = true
+			if name == "Main" then
+				StoreMode.Back.Visible = true
+				StoreMode.Back.TextLabel.Text = "Return to Shopping Mode"
+				StoreMode.SideFrame.Visible = true
+			elseif name == "Functions" then
+				StoreMode.Back.Visible = true
+				StoreMode.Back.TextLabel.Text = "Return to Store Auth"
+				StoreMode.SideFrame.Visible = true
+			elseif name == "AgeVerification" then
+				StoreMode.SideFrame.Visible = true
+			elseif name == "ModeOfOperation" then
+				StoreMode.Back.Visible = true
+				StoreMode.Back.TextLabel.Text = "Return to Store Auth"
+				StoreMode.SideFrame.Visible = true
+			end
+		end
+	end
+	MachineStorage.ActiveStoreApplication = name
+	MainApp.StoreMode.Visible = true
+end
+
+function PaymentApplicationChange(name)
+	for i,v in pairs(MainApp.Application.PayScreen.TopFrame:GetDescendants()) do
+		if v:IsA("Frame") then
+			v.Visible = false
+		end
+	end
+	MainApp.Application.PayScreen.TopFrame[name].Visible = true
+end
+
+function Transition(name) 
+	local transition1 = TweenService:Create(MainApp.Application.Transition,TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.InOut),{ImageTransparency = 0}) 
+	local transition2 = TweenService:Create(MainApp.Application.Transition,TweenInfo.new(0.4,Enum.EasingStyle.Quad,Enum.EasingDirection.InOut),{ImageTransparency = 1}) 
+
+	transition1:Play() 
+	MainApp.Application.Transition.Visible = true 
+	wait(0.5)
+	ApplicationChange(name)
+	transition2:Play() 
+	transition2.Completed:Connect(function() 
+		MainApp.Application.Transition.Visible = false 
+	end)
+end
+
+function PlayVoice(name)
+	if name == "Start" then
+		if MasterConfiguration.Voices["Start"] then
+			Screen.Voice.SoundId = "rbxassetid://".. MasterConfiguration.Voices["Start"]
+			Screen.Voice:Play()
+		end
+	end
+end
+
+function StoreModeActivated(ColleagueID)
+	local Permissions = MasterConfiguration.StoreMode[ColleagueID].Permissions
+	MachineStorage.ActiveAccount.ActiveID = ColleagueID
+	MachineStorage.ActiveAccount.CloseLane = Permissions.CloseLane
+	MachineStorage.ActiveAccount.VoidTransaction = Permissions.VoidTransaction
+	MachineStorage.ActiveAccount.SuspendTransaction = Permissions.SuspendTransaction
+	MachineStorage.ActiveAccount.PrintBarcode = Permissions.PrintBarcode
+	MachineStorage.ActiveAccount.ModeOfOperation = Permissions.ModeOfOperation
+
+	local function UpdatePermissions(UIElement, IsEnabled)
+		UIElement.Transparency = IsEnabled and 0 or 0.2
+	end
+
+	if MachineStorage.ApprovalRequired == true then
+		StoreApplicationChange("AgeVerification")
+	else
+		StoreApplicationChange("Main")
+	end
+
+	for i,v in pairs(MainApp.Application.ScanScreen.SideFrame.ItemFrame:GetChildren()) do
+		if v:IsA("Frame") then
+			local Clone = v:Clone()
+			Clone.Parent = MainApp.StoreMode.SideFrame.ItemFrame
+		end
+	end
+
+
+	UpdatePermissions(MainApp.StoreMode.Main.Functions["1_Close"], Permissions.CloseLane)
+	UpdatePermissions(MainApp.StoreMode.Functions.Functions["3_ModeOfOperation"], Permissions.ModeOfOperation)
+
+	if MachineStorage.ItemCount == 0 then
+		MainApp.StoreMode.Main.Functions["3_Void"].Transparency = 0.2
+		MainApp.StoreMode.Main.Functions["2_Suspend"].Transparency = 0.2
+	else
+		UpdatePermissions(MainApp.StoreMode.Main.Functions["3_Void"], Permissions.VoidTransaction)
+		UpdatePermissions(MainApp.StoreMode.Main.Functions["2_Suspend"], Permissions.SuspendTransaction)
+	end
+
+	MainApp.StoreMode.SideFrame.Amount.Amount.Text = MasterConfiguration.Currency..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+	MainApp.StoreMode.SideFrame.Due.Due.Text = MasterConfiguration.Currency..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+	MainApp.StoreMode.SideFrame.Top.Items.Items.Text = MachineStorage.ItemCount.. " Item(s)"
+	MachineStorage.StoreModeActive = true
+	MainEvent:Fire('RealScan', 'Red')
+end
+
+function StoreModeExit()
+	for i,v in pairs(MainApp:GetChildren()) do
+		if v:IsA("Frame") then
+			v.Visible = false
+		end
+	end
+
+	for i,v in pairs(MainApp.StoreMode.SideFrame.ItemFrame:GetChildren()) do
+		if v:IsA("Frame") then
+			v:Destroy()
+		end
+		ClearInterventions()
+	end	
+
+	for i,v in pairs(MainApp.Application.ScanScreen.SideFrame.ItemFrame:GetChildren()) do
+		if v:IsA("Frame") then
+			v.RestrictedFrame.Visible = false
+		end
+	end
+
+	MachineStorage.StoreModeActive = false
+	MainApp.Application.Visible = true
+	ApplicationChange("ScanScreen")
+	ChangeStatus("Green")
+	MainEvent:Fire('RealScan', 'Green')
+	MainEvent:Fire('TriLight', 'Inactive')
+end
+
+function CloseLane()
+	for i,v in pairs(MainApp:GetChildren()) do
+		if v:IsA("Frame") then
+			v.Visible = false
+		end
+	end
+	MainEvent:Fire('RealScan', 'InUse')
+	MainEvent:Fire('TriLight', 'Red')
+	MainApp.Application.Visible = true
+	MachineStorage.StoreModeActive = false
+	MachineStorage.LaneClosureActive = true
+	ApplicationChange("LaneClosed")
+	ClearInterventions()
+end
+
+function RemoveItem(name)
+
+end
+
+function RemoveRestrictedItems()
+	for i,v in pairs(CheckoutStorage:GetChildren()) do
+		if v:IsA("Tool") then
+			if v.Handle:FindFirstChild("VERTEX | Product Data") then
+				if v.Handle:FindFirstChild("VERTEX | Product Data"):GetAttribute("Approval") == true then
+					local ProductPrice = v.Handle:FindFirstChild("VERTEX | Product Data"):GetAttribute("Price")
+
+					MachineStorage.CurrentPrice = MachineStorage.CurrentPrice - ProductPrice
+					MachineStorage.ItemCount = MachineStorage.ItemCount - 1
+					MainApp.Application.ScanScreen.SideFrame.Pay.TextLabel.Text = "Pay: ".. MasterConfiguration.Currency ..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+					MainApp.Application.ScanScreen.SideFrame.Amount.Amount.Text = MasterConfiguration.Currency ..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+					MainApp.Application.ScanScreen.SideFrame.Top.Items.Items.Text = MachineStorage.ItemCount.. " Item(s)"
+
+					v:Destroy()
+				end
+			end
+		end
+	end
+
+	for i,v in pairs(MainApp.Application.ScanScreen.SideFrame.ItemFrame:GetChildren()) do
+		if v:IsA("Frame") and v:FindFirstChild("RestrictedFrame").Visible == true then
+			v:FindFirstChild("RestrictedFrame").Visible = false
+			for i,v in pairs(v:GetChildren()) do
+				if v:IsA("TextLabel") then
+					v.TextTransparency = "0.6"
+				end
+			end
+		end
+	end
+
+	if MachineStorage.ItemCount == 0  then
+		RestartSession()
+	end
+end
+
+function SuspendTransaction()
+	local result = ""
+	math.randomseed(tick())
+	for i = 1, 12 do
+		result = result .. math.random(1, 9)
+	end
+
+	local SuspentStorage = Instance.new("Folder")
+	SuspentStorage.Parent = game:GetService("ServerStorage")
+	SuspentStorage.Name = result
+
+	for i,v in pairs(CheckoutStorage:GetChildren()) do
+		if v:IsA("Tool") and v.Handle:FindFirstChild("VERTEX | Product Data") then
+			v.Parent = SuspentStorage
+
+		end
+	end
+	MainEvent:Fire("FastFeedPrinter", "FeedSuspend", result)
+	Transition("FinishScreen")
+	wait(2)
+	RestartSession()
+end
+
+MainApp.StoreMode.Functions.Functions["1_PrintBarcode"].MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveAccount.PrintBarcode == true and MachineStorage.InterventionActive == false then
+		Transition("ScanScreen")
+
+		for i,v in pairs(MainApp:GetChildren()) do
+			if v:IsA("Frame") then
+				v.Visible = false
+			end
+		end
+		MainApp.Application.Visible = true
+		MachineStorage.StoreModeActive = false
+		MainEvent:Fire("FastFeedPrinter", "FeedBarcode")
+		MainEvent:Fire("RealScan", "Green")
+	end
+end)
+
+MainApp.StoreMode.Functions.Functions["3_ModeOfOperation"].MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveAccount.ModeOfOperation == true and MachineStorage.InterventionActive == false then
+		StoreApplicationChange("ModeOfOperation")
+	end
+end)
+
+MainApp.StoreMode.ModeOfOperation.Functions["1_CardOnly"].MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveAccount.ModeOfOperation == true and MachineStorage.InterventionActive == false and MachineStorage.StoreModeActive == true then
+		ModeOfOperation = "Card"
+		StoreApplicationChange("Main")		
+	end
+end)
+
+MainApp.StoreMode.ModeOfOperation.Functions["2_CardCash"].MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveAccount.ModeOfOperation == true and MachineStorage.InterventionActive == false and MachineStorage.StoreModeActive == true then
+		ModeOfOperation = "Cash"
+		StoreApplicationChange("Main")		
+	end
+end)
+
+MainApp.StoreMode.Main.Functions["2_Suspend"].MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveAccount.SuspendTransaction == true and MachineStorage.InterventionActive == false then
+		if MachineStorage.ItemCount >= 1  then
+			Transition("ScanScreen")
+			InterventionChange("SuspendTransaction")
+
+			for i,v in pairs(MainApp:GetChildren()) do
+				if v:IsA("Frame") then
+					v.Visible = false
+				end
+			end
+			MainApp.Application.Visible = true
+			MachineStorage.StoreModeActive = false
+		end
+	end
+end)
+
+MainApp.Application.Interventions.SuspendTransaction["Key_Yes"].MouseButton1Click:Connect(function()
+	if MachineStorage.ItemCount >= 1  then
+		SuspendTransaction()
+	end
+end)
+
+MainApp.Application.Interventions.SuspendTransaction["Key_No"].MouseButton1Click:Connect(function()
+	ClearInterventions()
+	MainEvent:Fire("RealScan", "Green")
+end)
+
+function ChangeMessage(Header, Text)
+	InterventionChange("Message")
+	MainEvent:Fire("RealScan", "InUse")
+	MainApp.Application.Interventions.Message.Header.Text = Header
+	MainApp.Application.Interventions.Message.Text.Text = Text
+end
+
+function RestartSession()
+	MachineStorage = {
+		Active = false,
+		Items = {},
+		PreviousIntervention = "",
+		ItemCount = 0,
+		CurrentPrice = 0,
+		ApprovalRequired = false,
+		AssistanceRequired = false,
+		AgeVerified = false,
+		InterventionActive = false,
+		PayPressed = false,
+		StoreModeActive = false,
+		LaneClosureActive = false,
+		AssistanceMode = "Enabled",
+		ActiveAccount = {
+			ActiveID = 0,
+			CloseLane = true,
+			VoidTransaction = false,
+			SuspendTransaction = false,
+			PrintBarcode = false,
+			ModeOfOperation = false,
+		}, 
+		EnterPassword = false, 
+		EnterID = true, 
+	}
+
+	for i,v in pairs(MainApp.Application:GetDescendants()) do
+		if v.Name == "ItemFrame" then
+			for i,v in pairs(v:GetChildren()) do
+				if v:IsA("Frame") and v.Name == "Product" then
+					v:Destroy()
+				end
+			end
+		end
+	end
+
+	for i,v in pairs(MainApp.StoreMode.SideFrame.ItemFrame:GetChildren()) do
+		if v:IsA("Frame") then
+			v:Destroy()
+		end
+	end
+
+	for i,v in pairs(MainApp.Application.Footer:GetDescendants()) do
+		if v:IsA("ImageButton") then
+			v.ImageTransparency = "0"
+		end
+	end
+
+	for i,v in pairs(MainApp.Application.PayScreen.TopFrame:GetChildren()) do
+		if v:IsA("Frame") then
+			v.Visible = false
+		end
+		MainApp.Application.PayScreen.TopFrame.SelectMethod.Visible = true
+	end
+
+	for i,v in pairs(CheckoutStorage:GetChildren()) do
+		if v:IsA("Tool") then
+			v:Destroy()
+		end
+	end
+
+	ChangeStatus("Green")
+
+	MainApp.Application.ScanScreen.SideFrame.Top.Items.Items.Text = "0 Item(s)"
+	MainApp.Application.ScanScreen.SideFrame.Amount.Amount.Text = MasterConfiguration.Currency.."0.00"
+	MainApp.Application.PayScreen.SideFrame.Savings.Savings.Text = MasterConfiguration.Currency.."0.00"
+	MainApp.Application.PayScreen.SideFrame.Amount.Amount.Text = MasterConfiguration.Currency.."0.00"
+	MainApp.Application.ScanScreen.SideFrame.Pay.TextLabel.Text = "Pay: "..MasterConfiguration.Currency.."0.00"
+	MainApp.Application.ScanScreen.TopFrame.ProductFrame.Visible = false
+	MainApp.Application.ScanScreen.TopFrame.TextLabel.Visible = true
+	Transition("StartScreen") 
+
+	MainEvent:Fire("RealScan", "Green") 
+	MainEvent:Fire("Reader", 'Idle')
+	Network:Fire("AttendantStation", LaneConfiguration.LaneNumber, "RemoveFromList")
+	MainEvent:Fire("TriLight","Green") 
+end
+
+function AppendItem(ProductPrice, ProductName, ProductImage, ProductApproval)
+	if MachineStorage.Active == true then	
+		script.Parent.Event:Fire('RealScan', 'Append')
+
+		table.insert(MachineStorage.Items, {Name = ProductName, Price = ProductPrice})
+
+		MainApp.Application.ScanScreen.TopFrame.TextLabel.Visible = false
+		MainApp.Application.ScanScreen.TopFrame.ProductFrame.Visible = true
+		MainApp.Application.ScanScreen.TopFrame.ProductFrame.ProductImage.Image = "rbxassetid://"..ProductImage
+		MainApp.Application.ScanScreen.TopFrame.ProductFrame.ProductName.Text = ProductName
+		MainApp.Application.ScanScreen.TopFrame.ProductFrame.ProductPrice.Text = MasterConfiguration.Currency..ProductPrice
+
+		MachineStorage.ItemCount = MachineStorage.ItemCount + 1 
+		MainApp.Application.ScanScreen.SideFrame.Top.Items.Items.Text = MachineStorage.ItemCount.. " Item(s)"
+
+		MachineStorage.CurrentPrice = MachineStorage.CurrentPrice + ProductPrice
+		MainApp.Application.ScanScreen.SideFrame.Pay.TextLabel.Text = "Pay: ".. MasterConfiguration.Currency ..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+		MainApp.Application.ScanScreen.SideFrame.Amount.Amount.Text = MasterConfiguration.Currency ..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+
+		local Clone = MainApp.Application.ScanScreen.SideFrame.ItemTemplate:Clone()
+		Clone.Parent = MainApp.Application.ScanScreen.SideFrame.ItemFrame
+		Clone.ProductPrice.Text = MasterConfiguration.Currency ..string.format("%.2f", tostring(ProductPrice))
+		Clone.ProductName.Text = ProductName
+		Clone.Name = "Product"
+		Clone.Visible = true 
+
+		Network:Fire("UpdateTotal",LaneConfiguration.LaneNumber,MachineStorage.CurrentPrice) 
+		Network:Fire("AttendantStation",LaneConfiguration.LaneNumber,"Online","ScanScreen",ProductName .. " - " .. MasterConfiguration.Currency .. string.format("%.2f",ProductPrice),false)
+
+		if ProductApproval == true and MachineStorage.AgeVerified == false then
+			Clone.RestrictedFrame.Visible = true
+			MachineStorage.ApprovalRequired = true
+		else
+			Clone.RestrictedFrame.Visible = false
+		end
+	end
+end
+
+function WeighItem(name)
+	InterventionChange("WeighItem")
+	MainEvent:Fire("RealScan", "Red")
+	script.Parent.Prompt.ProximityPrompt.Enabled = true
+	HotkeyWeighItem = name
+end
+
+script.Parent.Prompt.ProximityPrompt.Triggered:Connect(function(plr)
+	if MasterConfiguration.HotkeyConfiguration.Products[HotkeyWeighItem] then
+		if plr.Character:FindFirstChild(HotkeyWeighItem) then
+			local Clone = plr.Character[HotkeyWeighItem]:Clone()
+			Clone.Parent = CheckoutStorage
+			plr.Character[HotkeyWeighItem]:Destroy()
+
+			for productName, productData in pairs(MasterConfiguration.HotkeyConfiguration.Products) do
+				if HotkeyWeighItem == productName then
+					AppendItem(productData.Price, HotkeyWeighItem, productData.Thumbnail, false)
+					Transition("ScanScreen")
+					ClearInterventions()
+				end
+			end
+			HotkeyWeighItem = ""
+			script.Parent.Prompt.ProximityPrompt.Enabled = false
+		end
+	end
+end)
+
+Application.Interventions.WeighItem.Back.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == true then
+		ClearInterventions()
+		HotkeyWeighItem = ""
+		script.Parent.Prompt.ProximityPrompt.Enabled = false
+	end
+end)
+
+for _, v in pairs(MainApp:GetDescendants()) do
+	if v:IsA("TextButton") or v:IsA("ImageButton") then 
+		v.MouseButton1Click:Connect(function()
+			script.Parent.Screen.Screen.Touch:Play()
+		end)
+	end
+end 
+
+for i,v in pairs(MainApp.Application:GetDescendants()) do
+	if v.Name == "ColleagueID" then 
+		v.MouseButton1Click:Connect(function()
+			if MachineStorage.StoreModeActive == false and MachineStorage.PayPressed == false then
+				InterventionChange("Keypad")
+				script.Parent.Event:Fire("RealScan", "Green")
+			end
+		end)
+	end
+end
+
+Application.StartScreen.StartFrame.Touch.MouseButton1Click:Connect(function()
+	if LaneConfiguration.CardOnlyPrompt == true and LaneConfiguration.CardOnly == true and ModeOfOperation == "Card" then
+		InterventionChange("CardOnly")
+		MainEvent:Fire('RealScan','Red')
+		MainEvent:Fire('TriLight','Inactive')
+	else
+		PlayVoice("Start")
+		Transition("ScanScreen")
+		MainEvent:Fire('TriLight','Inactive')
+		MachineStorage.Active = true
+	end
+end)
+
+Application.ScanScreen.SideFrame.Pay.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == false and MachineStorage.ApprovalRequired == false  and MachineStorage.AssistanceRequired == false then
+		MainEvent:Fire('RealScan', 'InUse')
+		MainEvent:Fire('TriLight', 'Inactive')
+		if MachineStorage.ItemCount == 0 then
+			Transition("FinishScreen") 
+			wait(2)
+			RestartSession()
+		else
+			for i,v in pairs(Application.ScanScreen.SideFrame.ItemFrame:GetChildren()) do
+				if v:IsA("Frame") then
+					local clone = v:Clone()
+					clone.Parent = Application.PayScreen.SideFrame.ItemFrame
+				end
+			end
+			
+			if ModeOfOperation == "Card" then
+				for i,v in pairs(MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Cash:GetChildren()) do
+					if v:IsA("TextLabel") then
+						v.TextTransparency = 0.4
+					end
+					if v:IsA("ImageLabel") then
+						v.ImageTransparency = 0.4
+					end
+				end
+
+				MainApp.Application.PayScreen.TopFrame.Mode.Visible = true
+			elseif ModeOfOperation == "Cash" then
+				for i,v in pairs(MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Cash:GetChildren()) do
+					if v:IsA("TextLabel") then
+						v.TextTransparency = 0
+					end
+					if v:IsA("ImageLabel") then
+						v.ImageTransparency = 0
+					end
+				end
+
+				MainApp.Application.PayScreen.TopFrame.Mode.Visible = false
+			end
+
+			MachineStorage.PayPressed = true
+
+			MainApp.Application.PayScreen.SideFrame.Amount.Amount.Text = MasterConfiguration.Currency..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+			MainApp.Application.PayScreen.SideFrame.Due.Due.Text = MasterConfiguration.Currency..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+			MainApp.Application.PayScreen.SideFrame.Top.Items.Items.Text = MachineStorage.ItemCount.. " Item(s)"
+
+			Transition("PayScreen") 
+		end
+	elseif MachineStorage.ApprovalRequired == true then
+		InterventionChange('AgeVerify')
+		MainEvent:Fire('RealScan', 'Red')
+		MainEvent:Fire('TriLight', 'Red')
+		ChangeStatus('Red')
+	elseif MachineStorage.AssistanceRequired == true then
+		InterventionChange("Assistance")
+		MainApp.Application.Interventions.Assistance.Sub.Text = "Wait for the store approval. Approval needed for: Assistance Required"
+		MainEvent:Fire('RealScan', 'Red')
+		MainEvent:Fire('TriLight', 'Red')
+		ChangeStatus('Red')
+	end
+end)
+
+MainApp.Application.PayScreen.Back.Touch.MouseButton1Click:Connect(function()
+	if MachineStorage.PayPressed == true and MachineStorage.InterventionActive == false then
+		for i,v in pairs(Application.PayScreen.SideFrame.ItemFrame:GetChildren()) do
+			if v:IsA("Frame") then
+				v:Destroy()
+			end
+		end
+
+		MachineStorage.PayPressed = false
+		Transition("ScanScreen") 
+		MainEvent:Fire('RealScan', 'Green')
+	end
+end)
+
+MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Card.Touch.MouseButton1Click:Connect(function()
+	if MachineStorage.PayPressed == true and MachineStorage.InterventionActive == false then
+		InterventionChange("CardEntry")
+		MainEvent:Fire('RealScan', 'Red')
+		wait(2)
+		MainEvent:Fire("Reader", "Active", MachineStorage.CurrentPrice)
+	end
+end)
+
+MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Cash.Touch.MouseButton1Click:Connect(function()
+	if MachineStorage.PayPressed == true and MachineStorage.InterventionActive == false then
+		if ModeOfOperation == "Cash" and script.Parent:GetAttribute("Device") == "75" then
+			InterventionChange("CashPayment")
+			MainEvent:Fire('RealScan', 'Red')
+			Application.Interventions.CashPayment.AmountDue.Text = "Amount Due: ".. MasterConfiguration.Currency ..string.format("%.2f", tostring(MachineStorage.CurrentPrice))
+			Application.Interventions.CashPayment.AmountPaid.Text = "Amount Paid: "..  MasterConfiguration.Currency.. "0.00"
+			MainEvent:Fire("CashHandler", "Active", MachineStorage.CurrentPrice)
+		end
+	end
+end)
+
+MainApp.Application.StartScreen.SearchFrame.Touch.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == false and MasterConfiguration.HotkeyConfiguration.HotkeysEnabled == true then
+		MachineStorage.Active = true
+		Transition("HotkeysScreen")
+		MainEvent:Fire('RealScan', 'InUse')
+	end
+end)
+
+MainApp.Application.ScanScreen.BottomFrame.Hotkeys.Touch.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == false and MasterConfiguration.HotkeyConfiguration.HotkeysEnabled == true then
+		MachineStorage.Active = true
+		Transition("HotkeysScreen")
+		MainEvent:Fire('RealScan', 'InUse')
+	end
+end)
+
+MainApp.Application.Footer.Frame.Assistance.ImageButton.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == false then
+		InterventionChange("CallForHelp")
+	end
+end)
+
+MainApp.Application.Interventions.CallForHelp.Key_Back.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == true then
+		ClearInterventions()
+	end
+end)
+
+MainApp.Application.HotkeysScreen.Back.Touch.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == false then
+		Transition("ScanScreen")
+	end
+end)
+
+--[[STORE MODE]]
+
+MainApp.StoreMode.Main.Functions["1_Close"].MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveAccount.CloseLane == true and MachineStorage.InterventionActive == false then
+		CloseLane()
+	end
+end)
+
+MainApp.StoreMode.Main.Functions["3_Void"].MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveAccount.VoidTransaction == true and MachineStorage.InterventionActive == false then
+		if MachineStorage.ItemCount >= 1  then
+			Transition("ScanScreen")
+			InterventionChange("CancelItems")
+
+			for i,v in pairs(MainApp:GetChildren()) do
+				if v:IsA("Frame") then
+					v.Visible = false
+				end
+			end
+			MainApp.Application.Visible = true
+			MachineStorage.StoreModeActive = false
+		end
+	end
+end)
+
+MainApp.StoreMode.Main.Functions["4_Functions"].MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == false then
+		StoreApplicationChange("Functions")
+	end
+end)
+
+MainApp.Application.Interventions.CancelItems.Key_Yes.MouseButton1Click:Connect(function()
+	RestartSession()
+end)
+
+MainApp.Application.Interventions.CancelItems.Key_No.MouseButton1Click:Connect(function()
+	MainEvent:Fire("RealScan", "Green")
+	ClearInterventions()
+end)
+
+
+--{{KEYPAD FUNCTIONS}}
+
+local colleagueLogin = Application.Interventions.Keypad 
+local input = Application.Interventions.Keypad.Input.Input	 
+local ID = "" 
+local title = Application.Interventions.Keypad.Title 
+local password = "" 
+
+MainApp.Application.Interventions.Keypad.Key_Back.MouseButton1Click:Connect(function() 
+	local input = MainApp.Application.Interventions.Keypad.Input.Input 
+	local words = string.split(input.Text, "") 
+	table.remove(words) 
+	input.Text = table.concat(words,"")
+	ClearInterventions() 
+	title.Text = "Enter Colleague ID" 
+	input.Text = "" 
+	MachineStorage.EnterPassword = false 
+	MachineStorage.EnterID = true 
+	if MachineStorage.LaneClosureActive == true then
+		MainEvent:Fire("RealScan", "Red")
+	end
+end)
+
+
+colleagueLogin.Keys.Key_Ok.MouseButton1Click:Connect(function() 
+	for staffID,staffData in pairs(MasterConfiguration.StoreMode) do 
+		if input.Text == staffID then 
+			if MachineStorage.EnterPassword == false then
+				title.Text = "Enter Password" 
+				ID = input.Text 
+				input.Text = "" 
+				MachineStorage.EnterPassword = true 
+				MachineStorage.EnterID = false 
+				password = staffData.Password
+			end
+		end  
+	end 
+end) 
+
+colleagueLogin.Keys.Key_Ok.MouseButton1Click:Connect(function() 
+	for staffID,staffData in pairs(MasterConfiguration.StoreMode) do 
+		if MachineStorage.EnterPassword == true then 
+			if input.Text == password then 
+				StoreModeActivated(ID) 
+				MachineStorage.InterventionActive = false 
+				ClearInterventions() 
+				title.Text = "Enter Colleague ID" 
+				input.Text = "" 
+				MachineStorage.EnterPassword = false 
+				MachineStorage.EnterID = true 
+			else 
+				input.PlaceholderText = "Invalid Password" 
+				input.Text = "" 
+				wait(1) 
+				input.PlaceholderText = "" 
+				title.Text = "Enter Colleague ID" 
+				MachineStorage.EnterPassword = false 
+				MachineStorage.EnterID = true 
+			end
+		end 
+	end 
+end) 
+
+for _,button in pairs(MainApp.Application.Interventions.Keypad.Keys:GetChildren()) do 
+	if button:IsA("TextButton") then 
+		if tonumber(button.Name) then 
+			button.MouseButton1Click:Connect(function() 
+				if MachineStorage.EnterPassword == true then
+					local colleagueLogin = MainApp.Application.Interventions.Keypad 
+					local keypad = colleagueLogin.Keys
+					local input = keypad.Parent.Input.Input
+					input.Text = input.Text .. button.Name
+				else
+					local colleagueLogin = MainApp.Application.Interventions.Keypad 
+					local keypad = colleagueLogin.Keys
+					local input = keypad.Parent.Input.Input
+					input.Text = input.Text .. button.Name 
+				end
+			end) 
+		end 
+	end
+end 
+
+MainApp.Application.Interventions.Keypad.Keys.Key_Back.MouseButton1Click:Connect(function() 
+	local input = MainApp.Application.Interventions.Keypad.Input.Input 
+	local words = string.split(input.Text, "") 
+	table.remove(words) 
+	input.Text = table.concat(words,"")
+end)
+
+--{{PHOTO VERIFY FUNCTIONS}}
+
+MainApp.Application.Interventions.AgeVerify.VerAge.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == true and MachineStorage.AgeVerified == false then
+		InterventionChange("PhotoVerify")
+	end
+end)
+
+MainApp.Application.Interventions.PhotoVerify.Verify_Ok.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == true and MachineStorage.AgeVerified == false then
+		MainApp.Application.Interventions.PhotoVerify.Spin.Visible = true
+		wait(5)
+		ChangeMessage("Age Verification", "Your age has been approved.")
+		ChangeStatus("Green")
+		MainApp.Application.Interventions.PhotoVerify.Spin.Visible = false
+		MainApp.Application.Interventions.PhotoVerify.Thumbnail.Image = "0"
+		MainEvent:Fire('RealScan', 'InUse')
+		MainEvent:Fire('TriLight', 'Inactive')
+		MachineStorage.AgeVerified = true
+		MachineStorage.ApprovalRequired = false
+		for i,v in pairs(MainApp.Application.ScanScreen.SideFrame.ItemFrame:GetChildren()) do
+			if v:IsA("Frame") then
+				v.RestrictedFrame.Visible = false
+			end
+		end
+	end
+end)
+
+--{{INTERVENTION FUNCTIONS}}
+
+
+MainApp.Application.Interventions.Message.Key_Yes.MouseButton1Click:Connect(function()
+	if MachineStorage.InterventionActive == true then
+		ClearInterventions()
+		MainEvent:Fire('RealScan', 'Green')
+	end
+end)
+
+MainApp.StoreMode.Back.Touch.MouseButton1Click:Connect(function()
+	if MachineStorage.ActiveStoreApplication == "Main" then
+		StoreModeExit()
+		MainEvent:Fire('TriLight', 'Inactive')
+	elseif MachineStorage.ActiveStoreApplication == "Functions" then
+		StoreApplicationChange("Main")
+	elseif MachineStorage.ActiveStoreApplication == "ModeOfOperation" then
+		StoreApplicationChange("Functions")
+	
+	end
+end)
+
+MainApp.Application.Interventions.CardOnly.Key_Yes.MouseButton1Click:Connect(function()
+	MachineStorage.Active = true
+	MainEvent:Fire('RealScan','Green')
+	Transition("ScanScreen")
+	ClearInterventions()
+end)
+
+MainApp.Application.Interventions.CardOnly.Key_No.MouseButton1Click:Connect(function()
+	ClearInterventions()
+	MainEvent:Fire('RealScan','Green')
+	MainEvent:Fire('TriLight','Green')
+end)
+
+MainApp.StoreMode.AgeVerification.Functions["1_Yes"].MouseButton1Click:Connect(function()
+	MachineStorage.AgeVerified = true
+	MachineStorage.ApprovalRequired = false
+	if MachineStorage.PayPressed == true then
+		ApplicationChange("PayScreen")
+	else
+		ApplicationChange("ScanScreen")
+		StoreModeExit()
+	end
+end)
+
+MainApp.StoreMode.AgeVerification.Functions["2_No"].MouseButton1Click:Connect(function()
+	RemoveRestrictedItems()
+	StoreModeExit()
+end)
+
+MainApp.Application.Interventions.CallForHelp.Key_OK.MouseButton1Click:Connect(function()
+	if MachineStorage.Active == true then
+		if LaneConfiguration.CallForHelp and MachineStorage.AssistanceMode == "Enabled" then
+			MachineStorage.AssistanceRequired = true
+			ChangeStatus("Red")
+			MainEvent:Fire("TriLight", "Red")
+			ClearInterventions()
+		else
+			ChangeMessage("Assistance Disabled", "Call for assistance is currently unavailable.")
+		end
+	else
+		ClearInterventions()
+	end
+end)
+
+--{{CARDONLY}}
+if script.Parent:GetAttribute("Device") == "70" then
+		for i,v in pairs(MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Cash:GetChildren()) do
+			if v:IsA("TextLabel") then
+				v.TextTransparency = 0.4
+			end
+			if v:IsA("ImageLabel") then
+				v.ImageTransparency = 0.4
+			end
+		end
+
+		MainApp.Application.PayScreen.TopFrame.Mode.Visible = true
+elseif script.Parent:GetAttribute("Device") == "90" then
+	for i,v in pairs(MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Cash:GetChildren()) do
+		if v:IsA("TextLabel") then
+			v.TextTransparency = 0.4
+		end
+		if v:IsA("ImageLabel") then
+			v.ImageTransparency = 0.4
+		end
+	end
+
+	MainApp.Application.PayScreen.TopFrame.Mode.Visible = true
+elseif script.Parent:GetAttribute("Device") == "75" then
+	if LaneConfiguration.CardOnly == false then
+		for i,v in pairs(MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Cash:GetChildren()) do
+			if v:IsA("TextLabel") then
+				v.TextTransparency = 0
+			end
+			if v:IsA("ImageLabel") then
+				v.ImageTransparency = 0
+			end
+		end
+
+		MainApp.Application.PayScreen.TopFrame.Mode.Visible = false
+	else
+		for i,v in pairs(MainApp.Application.PayScreen.TopFrame.SelectMethod.Options.Cash:GetChildren()) do
+			if v:IsA("TextLabel") then
+				v.TextTransparency = 0.4
+			end
+			if v:IsA("ImageLabel") then
+				v.ImageTransparency = 0.4
+			end
+		end
+
+		MainApp.Application.PayScreen.TopFrame.Mode.Visible = true
+	end
+end
+
+
+
+
+--{{HOTKEY FUNCTIONS}}
+local Keyboard = MainApp.Application.HotkeysScreen.Keyboard
+local Input = Keyboard.Input.TextLabel
+
+if MasterConfiguration.HotkeyConfiguration.HotkeysEnabled then
+	for productName, productData in pairs(MasterConfiguration.HotkeyConfiguration.Products) do
+		local Clone = MainApp.Application.HotkeysScreen.Template:Clone()
+		Clone.Frame.ProductName.Text = productName
+		Clone.ProductImage.Image = "rbxassetid://"..productData.Thumbnail
+		Clone.Name = productName
+		Clone.Parent = MainApp.Application.HotkeysScreen.ScrollingFrame
+		Clone.Visible = true
+	end
+end
+
+for i, v in pairs(MainApp.Application.HotkeysScreen.ScrollingFrame:GetDescendants()) do
+	if v:IsA("TextButton") and v.Name == "Touch" then
+		v.MouseButton1Click:Connect(function()
+			local name = v.Parent.Name
+			for productName, productData in pairs(MasterConfiguration.HotkeyConfiguration.Products) do
+				if name == productName then
+					WeighItem(productName)
+				end
+
+			end
+		end)
+	end
+end
+
+local function UpdateItemVisibility()
+	for _, itemFrame in ipairs(MainApp.Application.HotkeysScreen.ScrollingFrame:GetChildren()) do
+		if itemFrame:IsA("Frame") then
+			itemFrame.Visible = Input.Text:lower() ~= "" and itemFrame.Name:lower():sub(1, #Input.Text) == Input.Text:lower()
+		end
+	end
+	if Input.Text == "" then
+		for i,v in pairs(MainApp.Application.HotkeysScreen.ScrollingFrame:GetChildren()) do
+			if v:IsA("Frame") then
+				v.Visible = true
+			end
+		end
+	end
+end
+
+for _, section in pairs({"A-L", "Z-M", "Q-P"}) do
+	for _, key in ipairs(Keyboard[section]:GetChildren()) do
+		if key:IsA("TextButton") then
+			key.MouseButton1Click:Connect(function()
+				if Input.Text == "Enter Item Name" then
+					Input.Text = ""
+				end
+				Input.Text = Input.Text .. key.Name
+				UpdateItemVisibility()
+			end)
+		end
+	end
+end
+
+Keyboard.Misc.Key_Backspace.MouseButton1Click:Connect(function()
+	Input.Text = Input.Text:sub(1, -2)
+	UpdateItemVisibility()
+end)
+
+Keyboard.Misc.Key_Space.MouseButton1Click:Connect(function()
+	Input.Text = Input.Text.." "
+end)
+
+--{{MACHINE COMMUNICATION EVENTS}}
+
+function TerminateSystem()
+	MainEvent:Fire("TriLight", "Inactive")
+	MainEvent:Fire("RealScan", "InUse")
+	MainEvent:Fire("Reader", "Shutdown")
+end
+
+script.Parent.Body.Power.ClickDetector.MouseClick:Connect(function(plr)	
+	if MasterConfiguration.WhitelistConfiguration.WhitelistEnabled == false then 
+		MainEvent:Fire("UIHandler", "Reboot")
+		wait(0.3)
+		TerminateSystem()
+	end
+	if MasterConfiguration.WhitelistConfiguration.Players[plr.UserId] then
+		MainEvent:Fire("UIHandler", "Reboot")
+		wait(0.3)
+		TerminateSystem()
+	else
+		for i,v in pairs(MasterConfiguration.WhitelistConfiguration.Group) do
+			if plr:GetRankInGroup(i) >= v then
+				MainEvent:Fire("UIHandler", "Reboot")
+				wait(0.3)
+				TerminateSystem()
+			end
+		end
+	end
+end)
+
+MainEvent.Event:Connect(function(Device, Mode, ProductPrice, ProductName, ProductImage, ProductApproval)
+	if Device == "Machine" and Mode == "ObjectScan" then
+		if MachineStorage.LaneClosureActive == false and MachineStorage.StoreModeActive == false then
+			if MachineStorage.Active == false and LaneConfiguration.CardOnlyPrompt == true and LaneConfiguration.CardOnly == true then
+				InterventionChange("CardOnly")
+			elseif MachineStorage.Active == false then
+				ApplicationChange("ScanScreen")
+			end
+			MachineStorage.Active = true
+			AppendItem(ProductPrice, ProductName, ProductImage, ProductApproval)
+			MainEvent:Fire("TriLight","Inactive") 
+		end
+	end
+end)
+
+MainEvent.Event:Connect(function(Device, Mode, Data)
+	if Device ~= "Machine" or Mode ~= "BulkAppend" then return end
+	if MachineStorage.LaneClosureActive or MachineStorage.StoreModeActive then return end
+
+	MachineStorage.Active = true
+	ApplicationChange("ScanScreen")
+
+	if type(Data) == "table" and #Data > 0 then
+		task.spawn(function()
+			for _, Product in ipairs(Data) do
+				AppendItem(Product.Price, Product.Name, Product.Image, Product.Approval)
+
+			end
+			MainEvent:Fire("TriLight", "Inactive")
+		end)
+	end
+end)
+
+MainEvent.Event:Connect(function(Device, Mode)
+	if Device == "Machine" and Mode == "LoadingShopping" then
+		if MachineStorage.Active == false then
+			MachineStorage.Active = true
+			ApplicationChange("ScanScreen")
+			wait(0.2)
+			InterventionChange("LoadingShopping")
+		end
+	end
+end)
+
+MainEvent.Event:Connect(function(Device, Mode)
+	if Device == "Machine" and Mode == "FinishLoadingShopping" then
+		if MachineStorage.Active == true then
+			ClearInterventions()
+		end
+	end
+end)
+
+MainEvent.Event:Connect(function(Device, Mode, ColleagueID, ProductPrice, ProductName, ProductImage, ProductApproval)
+	if Device == "Machine" and Mode == "OperatorBarcode" then
+		if MasterConfiguration.StoreMode[ColleagueID] then
+			if MachineStorage.LaneClosureActive == true then
+				RestartSession()
+				for i,v in pairs(MainApp:GetChildren()) do
+					if v:IsA("Frame") then
+						v.Visible = false
+					end
+				end
+				MainApp.Application.Visible = true
+			else
+				StoreModeActivated(ColleagueID)
+			end
+		else
+			warn("VERTEX | Operator ID "..ColleagueID..": Is not Configured")
+		end
+	end
+end)
+
+MainEvent.Event:Connect(function(Device, Mode, plr)
+	if Device == "Machine" and Mode == "Restart" then
+		MainApp.Application.PayScreen.SideFrame.Due.Due.Text = MasterConfiguration.Currency.."0.00"
+		wait(1)
+		for i,v in pairs(CheckoutStorage:GetChildren()) do
+			if v:IsA("Tool") then
+				local Clone = v
+				Clone.Parent = game.Players:FindFirstChild(plr).Backpack
+			end
+		end
+		if plr == nil then
+			print("nil lol")
+		else
+			MainEvent:Fire("FastFeedPrinter", "FeedReceipt", MachineStorage.Items, MachineStorage.ItemCount, MachineStorage.CurrentPrice, plr)
+		end
+		
+		Transition("FinishScreen")  
+		wait(2)
+		RestartSession()
+		CheckoutStorage:ClearAllChildren()
+	end
+end)
+
+MainEvent.Event:Connect(function(Device, Mode, Mode2)
+	if Device == "Machine" and Mode == "StartUp" then
+		if Mode2 == "Normal" then
+			RestartSession() 
+		elseif Mode2 == "Close" then
+			CloseLane()
+		
+		end
+		
+		if MASTER_MODULE.vertexDeviceMessages.vertexSelfServ.Enabled == true then
+			if MASTER_MODULE.vertexDeviceMessages.vertexSelfServ.Version == DeviceVersion then
+				InterventionChange("Message")
+				ChangeMessage(MASTER_MODULE.vertexDeviceMessages.vertexSelfServ.Title, MASTER_MODULE.vertexDeviceMessages.vertexSelfServ.Context)
+			end
+		end
+	end
+end)
